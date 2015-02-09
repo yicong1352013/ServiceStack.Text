@@ -147,7 +147,11 @@ namespace ServiceStack.Text.Common
                 int propertyOrder = -1;
                 var propertyType = propertyInfo.PropertyType;
                 var defaultValue = propertyType.GetDefaultValue();
-                bool propertySuppressDefaultConfig = defaultValue != null && propertyType.IsValueType() && !propertyType.IsEnum() && JsConfig.HasSerializeFn.Contains(propertyType);
+                bool propertySuppressDefaultConfig = defaultValue != null 
+                    && propertyType.IsValueType() 
+                    && !propertyType.IsEnum() 
+                    && JsConfig.HasSerializeFn.Contains(propertyType) 
+                    && !JsConfig.HasIncludeDefaultValue.Contains(propertyType);
                 bool propertySuppressDefaultAttribute = false;
 
                 var shouldSerialize = GetShouldSerializeMethod(propertyInfo);
@@ -198,7 +202,10 @@ namespace ServiceStack.Text.Common
                 int propertyOrder = -1;
                 var propertyType = fieldInfo.FieldType;
                 var defaultValue = propertyType.GetDefaultValue();
-                bool propertySuppressDefaultConfig = defaultValue != null && propertyType.IsValueType() && !propertyType.IsEnum() && JsConfig.HasSerializeFn.Contains(propertyType);
+                bool propertySuppressDefaultConfig = defaultValue != null 
+                    && propertyType.IsValueType() && !propertyType.IsEnum() 
+                    && JsConfig.HasSerializeFn.Contains(propertyType) 
+                    && !JsConfig.HasIncludeDefaultValue.Contains(propertyType);
                 bool propertySuppressDefaultAttribute = false;
 #if (NETFX_CORE)
                 var shouldSerialize = (Func<T, bool>)null;
@@ -519,9 +526,9 @@ namespace ServiceStack.Text.Common
                     else
                     {                        
                         //Trim brackets in top-level lists in QueryStrings, e.g: ?a=[1,2,3] => ?a=1,2,3
-                        using (var ms = new MemoryStream())
-                        using (var enumerableWriter = new StreamWriter(ms))
+                        using (var ms = MemoryStreamFactory.GetStream())
                         {
+                            var enumerableWriter = new StreamWriter(ms); //ms disposed in using 
                             propertyWriter.WriteFn(enumerableWriter, propertyValue); 
                             enumerableWriter.Flush();
                             var output = ms.ToArray().FromUtf8Bytes();

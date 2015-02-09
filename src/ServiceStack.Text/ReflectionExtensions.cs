@@ -649,6 +649,11 @@ namespace ServiceStack
         public static PropertyInfo[] GetSerializableProperties(this Type type)
         {
             var publicProperties = GetPublicProperties(type);
+            return publicProperties.OnlySerializableProperties(type);
+        }
+
+        public static PropertyInfo[] OnlySerializableProperties(this PropertyInfo[] publicProperties, Type type = null)
+        {
             var publicReadableProperties = publicProperties.Where(x => x.PropertyGetMethod() != null);
 
             if (type.IsDto())
@@ -659,10 +664,11 @@ namespace ServiceStack
 
             // else return those properties that are not decorated with IgnoreDataMember
             return publicReadableProperties
-                .Where(prop => prop.AllAttributes().All(attr => {
-                        var name = attr.GetType().Name;
-                        return !IgnoreAttributesNamed.Contains(name);
-                    }))
+                .Where(prop => prop.AllAttributes()
+                    .All(attr => {
+                            var name = attr.GetType().Name;
+                            return !IgnoreAttributesNamed.Contains(name);
+                        }))
                 .Where(prop => !JsConfig.ExcludeTypes.Contains(prop.PropertyType))
                 .ToArray();
         }
@@ -834,7 +840,14 @@ namespace ServiceStack
         internal static PropertyInfo[] GetTypesPublicProperties(this Type subType)
         {
 #if (NETFX_CORE || PCL)
-            return subType.GetRuntimeProperties().ToArray();
+            var pis = new List<PropertyInfo>();
+            foreach (var pi in subType.GetRuntimeProperties())
+            {
+                var mi = pi.GetMethod ?? pi.SetMethod;
+                if (mi != null && mi.IsStatic) continue;
+                pis.Add(pi);
+            }
+            return pis.ToArray();
 #else
             return subType.GetProperties(
                 BindingFlags.FlattenHierarchy |
@@ -1003,6 +1016,9 @@ namespace ServiceStack
         const string DataContract = "DataContractAttribute";
         public static bool IsDto(this Type type)
         {
+            if (type == null)
+                return false;
+
 #if (NETFX_CORE || PCL)
             return type.HasAttribute<DataContractAttribute>();
 #else
@@ -1677,6 +1693,29 @@ namespace ServiceStack
         public static Type GetCollectionType(this Type type)
         {
             return type.ElementType() ?? type.GetTypeGenericArguments().FirstOrDefault();
+        }
+
+        public static Dictionary<string, object> ToObjectDictionary<T>(this T obj)
+        {
+            var alreadyDict = obj as Dictionary<string, object>;
+            if (alreadyDict != null)
+                return alreadyDict;
+
+            var dict = new Dictionary<string, object>();
+            
+            foreach (var pi in obj.GetType().GetSerializableProperties())
+            {
+                dict[pi.Name] = pi.GetValue(obj, null);
+            }
+
+            if (JsConfig.IncludePublicFields)
+            {
+                foreach (var fi in obj.GetType().GetSerializableFields())
+                {
+                    dict[fi.Name] = fi.GetValue(obj);
+                }
+            }
+            return dict;
         }
     }
 

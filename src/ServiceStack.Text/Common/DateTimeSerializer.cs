@@ -21,6 +21,7 @@ namespace ServiceStack.Text.Common
 {
     public static class DateTimeSerializer
     {
+        public const string CondensedDateTimeFormat = "yyyyMMdd";                             //8
         public const string ShortDateTimeFormat = "yyyy-MM-dd";                               //11
         public const string DefaultDateTimeFormat = "dd/MM/yyyy HH:mm:ss";                    //20
         public const string DefaultDateTimeFormatWithFraction = "dd/MM/yyyy HH:mm:ss.fff";    //24
@@ -40,6 +41,9 @@ namespace ServiceStack.Text.Common
         private const char XsdTimeSeparator = 'T';
         private static readonly int XsdTimeSeparatorIndex = XsdDateTimeFormat.IndexOf(XsdTimeSeparator);
         private const string XsdUtcSuffix = "Z";
+        private static readonly char[] DateTimeSeperators = new[] { '-', '/' };
+
+        public static Func<string, Exception, DateTime> OnParseErrorFn { get; set; }
 
         /// <summary>
         /// If AlwaysUseUtc is set to true then convert all DateTime to UTC.
@@ -70,62 +74,84 @@ namespace ServiceStack.Text.Common
 
         public static DateTime ParseShortestXsdDateTime(string dateTimeStr)
         {
-            if (string.IsNullOrEmpty(dateTimeStr))
-                return DateTime.MinValue;
-
-            if (dateTimeStr.StartsWith(EscapedWcfJsonPrefix, StringComparison.Ordinal) || dateTimeStr.StartsWith(WcfJsonPrefix, StringComparison.Ordinal))
-                return ParseWcfJsonDate(dateTimeStr).Prepare();
-
-            if (dateTimeStr.Length == DefaultDateTimeFormat.Length
-                || dateTimeStr.Length == DefaultDateTimeFormatWithFraction.Length)
-            {
-                var unspecifiedDate = DateTime.Parse(dateTimeStr, CultureInfo.InvariantCulture);
-                if (JsConfig.AssumeUtc)
-                    unspecifiedDate = DateTime.SpecifyKind(unspecifiedDate, DateTimeKind.Utc);
-
-                return unspecifiedDate.Prepare();
-            }
-
-            switch (JsConfig.DateHandler)
-            {
-                case DateHandler.UnixTime:
-                    int unixTime;
-                    if (int.TryParse(dateTimeStr, out unixTime))
-                        return unixTime.FromUnixTime();
-                    break;
-                case DateHandler.UnixTimeMs:
-                    long unixTimeMs;
-                    if (long.TryParse(dateTimeStr, out unixTimeMs))
-                        return unixTimeMs.FromUnixTimeMs();
-                    break;
-            }
-
-            dateTimeStr = RepairXsdTimeSeparator(dateTimeStr);
-
-            if (dateTimeStr.Length == XsdDateTimeFormatSeconds.Length)
-                return DateTime.ParseExact(dateTimeStr, XsdDateTimeFormatSeconds, null, DateTimeStyles.AdjustToUniversal).Prepare(parsedAsUtc:true); 
-
-            if (dateTimeStr.Length >= XsdDateTimeFormat3F.Length
-                && dateTimeStr.Length <= XsdDateTimeFormat.Length
-                && dateTimeStr.EndsWith(XsdUtcSuffix))
-            {
-                var dateTime = Env.IsMono ? ParseManual(dateTimeStr) : null;
-                if (dateTime != null)
-                    return dateTime.Value;
-
-                return PclExport.Instance.ParseXsdDateTimeAsUtc(dateTimeStr);
-            }
-
             try
             {
-                var dateTime = DateTime.Parse(dateTimeStr, null, DateTimeStyles.AssumeLocal);
-                return dateTime.Prepare();
+                if (string.IsNullOrEmpty(dateTimeStr))
+                    return DateTime.MinValue;
+
+                if (dateTimeStr.StartsWith(EscapedWcfJsonPrefix, StringComparison.Ordinal) || dateTimeStr.StartsWith(WcfJsonPrefix, StringComparison.Ordinal))
+                    return ParseWcfJsonDate(dateTimeStr).Prepare();
+
+                if (dateTimeStr.Length == DefaultDateTimeFormat.Length
+                    || dateTimeStr.Length == DefaultDateTimeFormatWithFraction.Length)
+                {
+                    var unspecifiedDate = DateTime.Parse(dateTimeStr, CultureInfo.InvariantCulture);
+                    if (JsConfig.AssumeUtc)
+                        unspecifiedDate = DateTime.SpecifyKind(unspecifiedDate, DateTimeKind.Utc);
+
+                    return unspecifiedDate.Prepare();
+                }
+
+                switch (JsConfig.DateHandler)
+                {
+                    case DateHandler.UnixTime:
+                        int unixTime;
+                        if (int.TryParse(dateTimeStr, out unixTime))
+                            return unixTime.FromUnixTime();
+                        break;
+                    case DateHandler.UnixTimeMs:
+                        long unixTimeMs;
+                        if (long.TryParse(dateTimeStr, out unixTimeMs))
+                            return unixTimeMs.FromUnixTimeMs();
+                        break;
+                }
+
+                dateTimeStr = RepairXsdTimeSeparator(dateTimeStr);
+
+                if (dateTimeStr.Length == XsdDateTimeFormatSeconds.Length)
+                    return DateTime.ParseExact(dateTimeStr, XsdDateTimeFormatSeconds, null, DateTimeStyles.AdjustToUniversal).Prepare(parsedAsUtc: true);
+
+                if (dateTimeStr.Length >= XsdDateTimeFormat3F.Length
+                    && dateTimeStr.Length <= XsdDateTimeFormat.Length
+                    && dateTimeStr.EndsWith(XsdUtcSuffix))
+                {
+                    var dateTime = Env.IsMono ? ParseManual(dateTimeStr) : null;
+                    if (dateTime != null)
+                        return dateTime.Value;
+
+                    return PclExport.Instance.ParseXsdDateTimeAsUtc(dateTimeStr);
+                }
+
+                if (dateTimeStr.Length == CondensedDateTimeFormat.Length && dateTimeStr.IndexOfAny(DateTimeSeperators) == -1)
+                {
+                    return DateTime.ParseExact(dateTimeStr, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
+                }
+
+                if (dateTimeStr.Length == ShortDateTimeFormat.Length)
+                {
+                    var manualDate = ParseManual(dateTimeStr);
+                    if (manualDate != null)
+                        return manualDate.Value;
+                }
+
+                try
+                {
+                    var dateTime = DateTime.Parse(dateTimeStr, null, DateTimeStyles.AssumeLocal);
+                    return dateTime.Prepare();
+                }
+                catch (FormatException)
+                {
+                    var manualDate = ParseManual(dateTimeStr);
+                    if (manualDate != null)
+                        return manualDate.Value;
+
+                    throw;
+                }
             }
-            catch (FormatException)
+            catch (Exception ex)
             {
-                var manualDate = ParseManual(dateTimeStr);
-                if (manualDate != null)
-                    return manualDate.Value;
+                if (OnParseErrorFn != null)
+                    return OnParseErrorFn(dateTimeStr, ex);
 
                 throw;
             }
@@ -150,10 +176,12 @@ namespace ServiceStack.Text.Common
 
         public static DateTime? ParseManual(string dateTimeStr)
         {
-            if (dateTimeStr == null || dateTimeStr.Length < "YYYY-MM-DD".Length)
+            if (dateTimeStr == null || dateTimeStr.Length < ShortDateTimeFormat.Length)
                 return null;
 
-            var dateKind = DateTimeKind.Utc;
+            var dateKind = JsConfig.AssumeUtc || JsConfig.AlwaysUseUtc 
+                ? DateTimeKind.Utc
+                : DateTimeKind.Local;
             if (dateTimeStr.EndsWith(XsdUtcSuffix))
             {
                 dateTimeStr = dateTimeStr.Substring(0, dateTimeStr.Length - 1);
@@ -168,7 +196,11 @@ namespace ServiceStack.Text.Common
             double subMs = 0;
             int offsetMultiplier = 0;
 
-            if (parts.Length == 2)
+            if (parts.Length == 1)
+            {
+                return new DateTime(int.Parse(dateParts[0]), int.Parse(dateParts[1]), int.Parse(dateParts[2]), 0, 0, 0, 0, dateKind);
+            }
+            else if (parts.Length == 2)
             {
                 var timeStringParts = parts[1].Split('+');
                 if (timeStringParts.Length == 2)
@@ -317,7 +349,15 @@ namespace ServiceStack.Text.Common
         {
             return dateTimeStr.StartsWith("P", StringComparison.Ordinal) || dateTimeStr.StartsWith("-P", StringComparison.Ordinal)
                 ? ParseXsdTimeSpan(dateTimeStr)
-                : TimeSpan.Parse(dateTimeStr);
+                : dateTimeStr.Contains(":") 
+                ? TimeSpan.Parse(dateTimeStr)
+                : ParseNSTimeInterval(dateTimeStr);
+        }
+
+        public static TimeSpan ParseNSTimeInterval(string doubleInSecs)
+        {
+            var secs = double.Parse(doubleInSecs);
+            return TimeSpan.FromSeconds(secs);
         }
 
         public static TimeSpan ParseXsdTimeSpan(string dateTimeStr)

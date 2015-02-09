@@ -73,5 +73,45 @@ namespace ServiceStack.Text.Tests
 
             Assert.That(obj.Get("name"), Is.EqualTo("Demis Bellot TW"));
         }
+
+        [Test]
+        public void Can_parse_ArrayObjects()
+        {
+            var data = new { key = new[] { "value1", "value2" } };
+            var json = data.ToJson();
+
+            Assert.That(json, Is.EqualTo(@"{""key"":[""value1"",""value2""]}"));
+
+            var value = JsonObject.Parse(json);
+            var dataObjects = value.Get<string[]>("key");
+
+            Assert.That(dataObjects[0], Is.EqualTo("value1"));
+            Assert.That(dataObjects[1], Is.EqualTo("value2"));
+        }
+
+        [Test]
+        public void Can_deserialize_JsonArray()
+        {
+            var json = @"
+                {
+                    ""projects"":[
+                        {
+                            ""name"": ""Project1""
+                        },
+                        {
+                            ""name"": ""Project2""
+                        },
+                        {
+                            ""name"": ""Project3""
+                        }
+                    ]
+                }";
+
+            var projects = JsonObject.Parse(json).ArrayObjects("projects");
+
+            var proj3Name = projects[2].Get("name");
+
+            Assert.That(proj3Name, Is.EqualTo("Project3"));
+        }
     }
 }

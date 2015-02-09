@@ -358,7 +358,7 @@ namespace ServiceStack
             var pos = strVal.IndexOf(needle);
             return pos == -1
                 ? new[] { strVal }
-                : new[] { strVal.Substring(0, pos), strVal.Substring(pos + 1) };
+                : new[] { strVal.Substring(0, pos), strVal.Substring(pos + needle.Length) };
         }
 
         public static string[] SplitOnLast(this string strVal, char needle)
@@ -376,7 +376,7 @@ namespace ServiceStack
             var pos = strVal.LastIndexOf(needle);
             return pos == -1
                 ? new[] { strVal }
-                : new[] { strVal.Substring(0, pos), strVal.Substring(pos + 1) };
+                : new[] { strVal.Substring(0, pos), strVal.Substring(pos + needle.Length) };
         }
 
         public static string WithoutExtension(this string filePath)
@@ -783,17 +783,20 @@ namespace ServiceStack
         public static bool IsUserType(this Type type)
         {
             return type.IsClass()
-                && type.Namespace != null
-                && !type.Namespace.StartsWith("System")
-                && type.Name.IndexOfAny(SystemTypeChars) == -1;
+                && !type.IsSystemType();
         }
 
         public static bool IsUserEnum(this Type type)
         {
             return type.IsEnum()
-                && type.Namespace != null
-                && !type.Namespace.StartsWith("System")
-                && type.Name.IndexOfAny(SystemTypeChars) == -1;
+                && !type.IsSystemType();
+        }
+
+        public static bool IsSystemType(this Type type)
+        {
+            return type.Namespace == null
+                || type.Namespace.StartsWith("System")
+                || type.Name.IndexOfAny(SystemTypeChars) >= 0;
         }
 
         public static bool IsInt(this string text)

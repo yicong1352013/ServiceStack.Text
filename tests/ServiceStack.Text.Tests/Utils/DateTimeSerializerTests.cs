@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Xml;
 using NUnit.Framework;
 using ServiceStack.Text.Common;
@@ -568,7 +569,57 @@ namespace ServiceStack.Text.Tests.Utils
             var dateStr = date.ToJson();
             var fromDate = dateStr.FromJson<DateTime>();
             Assert.AreEqual(date.ToLocalTime().RoundToSecond(), fromDate.ToLocalTime().RoundToSecond());
-        }        
+        }
+
+        [Test]
+        public void Can_handle_condensed_date_format()
+        {
+            var date = "20001213".FromJson<DateTime>();
+            Assert.That(date, Is.EqualTo(new DateTime(2000, 12, 13)));
+        }
+
+        [Test]
+        public void Can_handle_invalid_format_Exceptions()
+        {
+            DateTimeSerializer.OnParseErrorFn = (str, ex) =>
+                DateTime.ParseExact(str, "yyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None);
+
+            var date = "001213".FromJson<DateTime>();
+            Assert.That(date, Is.EqualTo(new DateTime(2000, 12, 13)));
+
+            DateTimeSerializer.OnParseErrorFn = null;
+        }
     }
 
+
+    [TestFixture]
+    public class TimeSpanTests
+    {
+        static readonly TimeSpan Time1Y1M1H1S1MS = TimeSpan.FromDays(365)
+                .Add(TimeSpan.FromHours(1))
+                .Add(TimeSpan.FromMinutes(1))
+                .Add(TimeSpan.FromSeconds(1))
+                .Add(TimeSpan.FromMilliseconds(1));
+
+        [Test]
+        public void Can_Parse_XSD_Times()
+        {
+            Assert.That("P365D".FromJson<TimeSpan>(), Is.EqualTo(TimeSpan.FromDays(365)));
+            Assert.That("P365DT1H1M1.001S".FromJson<TimeSpan>(), Is.EqualTo(Time1Y1M1H1S1MS));
+        }
+
+        [Test]
+        public void Can_Parse_TimeSpan_Strings()
+        {
+            Assert.That("365.00:00:00".FromJson<TimeSpan>(), Is.EqualTo(TimeSpan.FromDays(365)));
+            Assert.That("365.01:01:01.001".FromJson<TimeSpan>(), Is.EqualTo(Time1Y1M1H1S1MS));
+        }
+
+        [Test]
+        public void Can_Parse_TimeSpan_NSTimeSpan()
+        {
+            Assert.That("31536000".FromJson<TimeSpan>(), Is.EqualTo(TimeSpan.FromDays(365)));
+            Assert.That("31539661.001".FromJson<TimeSpan>(), Is.EqualTo(Time1Y1M1H1S1MS));
+        }
+    }
 }
