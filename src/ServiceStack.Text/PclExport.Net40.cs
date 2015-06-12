@@ -43,8 +43,13 @@ namespace ServiceStack
             this.DirSep = Path.DirectorySeparatorChar;
             this.AltDirSep = Path.DirectorySeparatorChar == '/' ? '\\' : '/';
             this.RegexOptions = RegexOptions.Compiled;
+#if DNXCORE50
+            this.InvariantComparison = CultureInfo.InvariantCulture.CompareInfo.GetStringComparer();
+            this.InvariantComparisonIgnoreCase = CultureInfo.InvariantCultureIgnoreCase.CompareInfo.GetStringComparer();
+#else
             this.InvariantComparison = StringComparison.InvariantCulture;
             this.InvariantComparisonIgnoreCase = StringComparison.InvariantCultureIgnoreCase;
+#endif
             this.InvariantComparer = StringComparer.InvariantCulture;
             this.InvariantComparerIgnoreCase = StringComparer.InvariantCultureIgnoreCase;
 
@@ -93,6 +98,26 @@ namespace ServiceStack
         public override void CreateDirectory(string dirPath)
         {
             Directory.CreateDirectory(dirPath);
+        }
+
+        public override string[] GetFileNames(string dirPath, string searchPattern = null)
+        {
+            if (!Directory.Exists(dirPath))
+                return new string[0];
+
+            return searchPattern != null
+                ? Directory.GetFiles(dirPath, searchPattern)
+                : Directory.GetFiles(dirPath);
+        }
+
+        public override string[] GetDirectoryNames(string dirPath, string searchPattern = null)
+        {
+            if (!Directory.Exists(dirPath))
+                return new string[0];
+
+            return searchPattern != null
+                ? Directory.GetDirectories(dirPath, searchPattern)
+                : Directory.GetDirectories(dirPath);
         }
 
         public const string AppSettingsKey = "servicestack:license";
@@ -1058,6 +1083,9 @@ namespace ServiceStack
 
         public static Hashtable ParseHashtable(string value)
         {
+            if (value == null) 
+                return null;
+
             var index = VerifyAndGetStartIndex(value, typeof(Hashtable));
 
             var result = new Hashtable();
